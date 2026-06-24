@@ -1,0 +1,8 @@
+# Coloque aqui o binário do app para testes locais.
+# Arquivos nesta pasta são ignorados pelo git (.gitignore).
+#
+# Android: youse-qa.apk
+# iOS:     youse-qa.app ou youse-qa.ipa
+#
+# Exemplo:
+#   cp ~/Downloads/youse-qa.apk ./apps/

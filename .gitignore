@@ -1,0 +1,36 @@
+# ── Dependências ─────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Ambiente (NUNCA versionar — PIN, credenciais, UDID real) ─────────────────
+.env
+.env.*
+!.env.example
+
+# ── SO / IDE ─────────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Build TypeScript ─────────────────────────────────────────────────────────
+dist/
+*.tsbuildinfo
+
+# ── WebdriverIO / Appium ─────────────────────────────────────────────────────
+logs/
+screenshots/
+allure-results/
+allure-report/
+reports/
+
+# Snapshot local do script device:keep-awake
+.device-keep-awake.json
+
+# APK/IPA locais (não versionar binários)
+apps/*.apk
+apps/*.ipa
+apps/*.aab
+
+# Logs na raiz
+/*.log

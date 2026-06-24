@@ -1,0 +1,384 @@
+##
+## GitHub Actions — CI Pipeline — Mobile Appium
+##
+## Estrutura:
+##   1. validate              → typecheck + lint + format check (todo PR)
+##   2. test-android-a11y     → smoke a11y Home (GATE DE PR — quando há APK)
+##   3. test-android-smoke    → smoke funcional + a11y completo (push em main / manual)
+##   4. test-ios-smoke        → smoke iOS em macOS runner (manual / push)
+##
+## Secrets opcionais:
+##   ANDROID_APP_PACKAGE, ANDROID_APP_ACTIVITY
+##   MOBILE_APK_BASE64        → APK codificado em base64 para CI Android
+##   MOBILE_APP_IOS_BASE64    → .app iOS Simulator (tar.gz) base64 para CI iOS
+##   IOS_BUNDLE_ID            → bundle id do app iOS
+##
+
+name: CI — Appium Mobile
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Plataforma (android | ios)'
+        required: false
+        default: 'android'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validação Estática (Lint + Types + Format)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Verificar tipos TypeScript
+        run: npm run typecheck
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Verificar formatação (Prettier)
+        run: npm run format:check
+
+  test-android-a11y:
+    name: A11y Smoke Android (gate de PR)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar drivers Appium
+        run: |
+          npx appium driver install uiautomator2
+          npm run appium:doctor || true
+
+      - name: Decodificar APK (se secret configurado)
+        if: env.MOBILE_APK_BASE64 != ''
+        env:
+          MOBILE_APK_BASE64: ${{ secrets.MOBILE_APK_BASE64 }}
+        run: |
+          mkdir -p apps
+          echo "$MOBILE_APK_BASE64" | base64 -d > apps/youse-qa.apk
+
+      - name: Verificar APK disponível
+        id: apk-check
+        run: |
+          if [ -f "apps/youse-qa.apk" ]; then
+            echo "has_apk=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_apk=false" >> $GITHUB_OUTPUT
+            echo "::warning::APK não encontrado — a11y smoke será pulado neste PR. Configure MOBILE_APK_BASE64 para ativar o gate."
+          fi
+
+      - name: Habilitar KVM (emulador Android)
+        if: steps.apk-check.outputs.has_apk == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Executar smoke a11y (Home — WCAG 2.2 AA)
+        if: steps.apk-check.outputs.has_apk == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: |
+            adb wait-for-device
+            npm run test:a11y:smoke:android
+        env:
+          PLATFORM: android
+          ANDROID_APP_PATH: ./apps/youse-qa.apk
+          ANDROID_APP_PACKAGE: ${{ secrets.ANDROID_APP_PACKAGE || 'io.youse.app' }}
+          ANDROID_APP_ACTIVITY: ${{ secrets.ANDROID_APP_ACTIVITY || '.MainActivity' }}
+          A11Y_EXECUTION_ID: ci-pr-${{ github.run_id }}-${{ github.run_attempt }}
+          A11Y_DEVICE_LABEL: 'Pixel 5 (emulator)'
+          A11Y_ANDROID_VERSION: '11'
+          CI: 'true'
+
+      - name: Gerar dashboard A11y
+        if: always() && steps.apk-check.outputs.has_apk == 'true'
+        run: npm run mobile:a11y:report -- --device "Pixel 5 (emulator)" --android 11
+        env:
+          A11Y_EXECUTION_ID: ci-pr-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload dashboard A11y
+        if: always() && steps.apk-check.outputs.has_apk == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-dashboard-pr
+          path: |
+            docs/reports/mobile-a11y-dashboard.md
+            docs/reports/mobile-a11y-latest.md
+            docs/reports/mobile-a11y-latest.html
+            docs/reports/mobile-a11y-latest.json
+            docs/reports/mobile-a11y-log.json
+            docs/reports/history/
+          retention-days: 30
+
+      - name: Upload Allure results (a11y)
+        if: always() && steps.apk-check.outputs.has_apk == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-a11y-android
+          path: allure-results/
+          retention-days: 14
+
+  test-android-smoke:
+    name: Smoke Android Funcional + A11y Completo (push / manual)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Não duplica em PRs — o gate de PR é o test-android-a11y
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar drivers Appium
+        run: |
+          npx appium driver install uiautomator2
+          npm run appium:doctor || true
+
+      - name: Decodificar APK (se secret configurado)
+        if: env.MOBILE_APK_BASE64 != ''
+        env:
+          MOBILE_APK_BASE64: ${{ secrets.MOBILE_APK_BASE64 }}
+        run: |
+          mkdir -p apps
+          echo "$MOBILE_APK_BASE64" | base64 -d > apps/youse-qa.apk
+
+      - name: Verificar APK disponível
+        id: apk-check
+        run: |
+          if [ -f "apps/youse-qa.apk" ]; then
+            echo "has_apk=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_apk=false" >> $GITHUB_OUTPUT
+            echo "::warning::APK não encontrado — testes mobile serão pulados. Configure MOBILE_APK_BASE64 ou faça upload manual."
+          fi
+
+      - name: Habilitar KVM
+        if: steps.apk-check.outputs.has_apk == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Executar smoke + a11y Android completos
+        if: steps.apk-check.outputs.has_apk == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: |
+            adb wait-for-device
+            npm run test:smoke:android
+            npm run test:a11y:android
+        env:
+          PLATFORM: android
+          ANDROID_APP_PATH: ./apps/youse-qa.apk
+          ANDROID_APP_PACKAGE: ${{ secrets.ANDROID_APP_PACKAGE || 'io.youse.app' }}
+          ANDROID_APP_ACTIVITY: ${{ secrets.ANDROID_APP_ACTIVITY || '.MainActivity' }}
+          A11Y_EXECUTION_ID: ci-full-${{ github.run_id }}-${{ github.run_attempt }}
+          A11Y_DEVICE_LABEL: 'Pixel 5 (emulator)'
+          A11Y_ANDROID_VERSION: '11'
+          CI: 'true'
+
+      - name: Gerar dashboard A11y (full)
+        if: always() && steps.apk-check.outputs.has_apk == 'true'
+        run: npm run mobile:a11y:report -- --device "Pixel 5 (emulator)" --android 11
+        env:
+          A11Y_EXECUTION_ID: ci-full-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload dashboard A11y (full)
+        if: always() && steps.apk-check.outputs.has_apk == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-dashboard-full
+          path: |
+            docs/reports/mobile-a11y-dashboard.md
+            docs/reports/mobile-a11y-latest.md
+            docs/reports/mobile-a11y-latest.html
+            docs/reports/mobile-a11y-latest.json
+            docs/reports/mobile-a11y-log.json
+            docs/reports/history/
+          retention-days: 30
+
+      - name: Upload screenshots em falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-screenshots
+          path: screenshots/
+          retention-days: 7
+
+      - name: Upload Allure results
+        if: always() && steps.apk-check.outputs.has_apk == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-mobile
+          path: allure-results/
+          retention-days: 14
+
+  test-ios-smoke:
+    name: Smoke iOS A11y (Simulador macOS)
+    needs: validate
+    runs-on: macos-14
+    timeout-minutes: 60
+    # macOS minutes são caros — só roda em push em main ou dispatch explícito com platform=ios
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.platform == 'ios')
+
+    env:
+      PLATFORM: ios
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar drivers Appium
+        run: |
+          npx appium driver install xcuitest
+          npm run appium:doctor || true
+
+      - name: Decodificar app iOS (.app.tar.gz)
+        if: env.MOBILE_APP_IOS_BASE64 != ''
+        env:
+          MOBILE_APP_IOS_BASE64: ${{ secrets.MOBILE_APP_IOS_BASE64 }}
+        run: |
+          mkdir -p apps
+          echo "$MOBILE_APP_IOS_BASE64" | base64 -d > apps/youse-qa.app.tar.gz
+          tar -xzf apps/youse-qa.app.tar.gz -C apps/
+          rm apps/youse-qa.app.tar.gz
+
+      - name: Verificar app iOS disponível
+        id: app-check
+        run: |
+          if [ -d "apps/youse-qa.app" ]; then
+            echo "has_app=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_app=false" >> $GITHUB_OUTPUT
+            echo "::warning::App iOS não encontrado — testes serão pulados. Configure MOBILE_APP_IOS_BASE64 (.app empacotado em tar.gz)."
+          fi
+
+      - name: Bootar simulador iPhone
+        if: steps.app-check.outputs.has_app == 'true'
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -E 'iPhone 15 \(' | head -1 | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+          if [ -z "$UDID" ]; then
+            UDID=$(xcrun simctl list devices available | grep -E 'iPhone' | head -1 | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+          fi
+          echo "IOS_UDID=$UDID" >> $GITHUB_ENV
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Executar smoke a11y iOS
+        if: steps.app-check.outputs.has_app == 'true'
+        run: npm run test:a11y:smoke:ios
+        env:
+          PLATFORM: ios
+          IOS_APP_PATH: ./apps/youse-qa.app
+          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID || 'io.youse.app' }}
+          IOS_DEVICE_NAME: 'iPhone 15'
+          IOS_UDID: ${{ env.IOS_UDID }}
+          A11Y_EXECUTION_ID: ci-ios-${{ github.run_id }}-${{ github.run_attempt }}
+          A11Y_DEVICE_LABEL: 'iPhone 15 (simulator)'
+          A11Y_IOS_VERSION: '17'
+          CI: 'true'
+
+      - name: Gerar dashboard A11y (iOS)
+        if: always() && steps.app-check.outputs.has_app == 'true'
+        run: npm run mobile:a11y:report -- --device "iPhone 15 (simulator)" --ios 17
+        env:
+          A11Y_EXECUTION_ID: ci-ios-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Upload dashboard A11y (iOS)
+        if: always() && steps.app-check.outputs.has_app == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: a11y-dashboard-ios
+          path: |
+            docs/reports/mobile-a11y-dashboard.md
+            docs/reports/mobile-a11y-latest.md
+            docs/reports/mobile-a11y-latest.html
+            docs/reports/mobile-a11y-latest.json
+            docs/reports/mobile-a11y-log.json
+            docs/reports/history/
+          retention-days: 30
+
+      - name: Upload Allure results (iOS)
+        if: always() && steps.app-check.outputs.has_app == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-ios
+          path: allure-results/
+          retention-days: 14
