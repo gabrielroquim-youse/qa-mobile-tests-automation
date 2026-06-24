@@ -1,0 +1,98 @@
+##
+## Publica o dashboard A11y (e o E2E) em GitHub Pages.
+##
+## Estratégia:
+##   1. Baixa os artifacts a11y-dashboard-* gerados pelo workflow `CI — Appium Mobile`
+##      após cada execução em `main` (ou execução manual).
+##   2. Monta um diretório `_site/` com:
+##        index.html  → redireciona para mobile-a11y-latest.html
+##        history/    → snapshots por execução
+##        *.md/*.json → exportados como anexos
+##   3. Faz deploy em https://gabrielroquim-youse.github.io/qa-mobile-tests-automation/
+##
+## Disparo:
+##   - workflow_run: roda automaticamente quando o CI termina com sucesso em main
+##   - workflow_dispatch: regenera o Pages on-demand (útil quando faltam artifacts)
+##
+
+name: Pages — A11y Dashboard
+
+on:
+  workflow_run:
+    workflows: ['CI — Appium Mobile']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Publicar dashboard A11y em GitHub Pages
+    runs-on: ubuntu-latest
+    # Só roda quando o CI passou (ou em dispatch manual)
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Baixar artifacts do CI (a11y-dashboard-*)
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          # Aceita qualquer um dos 3 jobs: gate PR, full, ou iOS
+          pattern: a11y-dashboard-*
+          merge-multiple: true
+          path: docs/reports/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Montar _site/
+        run: |
+          mkdir -p _site
+          if [ -d docs/reports ]; then
+            cp -r docs/reports/. _site/
+          fi
+          # index.html — redireciona para o dashboard HTML standalone
+          cat > _site/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="pt-br">
+          <head>
+            <meta charset="utf-8" />
+            <title>Mobile A11y Dashboard · Youse</title>
+            <meta http-equiv="refresh" content="0; url=mobile-a11y-latest.html" />
+            <link rel="canonical" href="mobile-a11y-latest.html" />
+          </head>
+          <body>
+            <p>Redirecionando para <a href="mobile-a11y-latest.html">mobile-a11y-latest.html</a>…</p>
+          </body>
+          </html>
+          HTML
+          ls -la _site/
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload do site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site/
+
+      - name: Deploy em GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
