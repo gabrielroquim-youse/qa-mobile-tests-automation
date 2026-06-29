@@ -1,1 +1,28 @@
+##
+## QA Pre-Commit Hook — Youse Seguradora (Mobile)
+##
+## Ordem de execução (rápido → lento, falha cedo):
+##   1. lint-staged          → ESLint + Prettier nos arquivos staged
+##   2. typecheck            → tsc --noEmit (garante tipos íntegros)
+##   3. qa-pre-commit-checks → bateria de validações Youse (LGPD, antipadrões
+##                             WDIO/Appium, tags, secrets, debug code, etc.)
+##
+## Para pular em emergência (com justificativa no PR):
+##   git commit --no-verify
+##
+
+set -e
+
+echo "🧹 lint-staged…"
 npx lint-staged
+
+# Typecheck só dispara se algum .ts foi alterado — mais rápido em commits
+# de docs/yml. A validação completa roda no pre-push.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.ts$'; then
+  echo "🔍 typecheck…"
+  npm run --silent typecheck
+fi
+
+echo "🛡️  qa-pre-commit-checks…"
+npx --no-install ts-node --transpile-only scripts/qa-pre-commit-checks.ts
+

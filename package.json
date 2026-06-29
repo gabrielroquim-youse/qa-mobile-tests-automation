@@ -32,6 +32,9 @@
     "format:check": "prettier --check \"**/*.{ts,json,yml,md}\"",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run lint && npm run format:check",
+    "qa:precommit": "ts-node --transpile-only scripts/qa-pre-commit-checks.ts",
+    "qa:commitmsg": "ts-node --transpile-only scripts/qa-commit-msg.ts",
+    "qa:check": "npm run validate && npm run qa:precommit",
     "prepare": "husky"
   },
   "lint-staged": {

@@ -1,0 +1,11 @@
+##
+## QA Commit-Msg Hook — Youse Seguradora (Mobile)
+##
+## Valida a mensagem de commit conforme Conventional Commits + padrões PT-BR.
+## Detalhes em scripts/qa-commit-msg.ts.
+##
+## Para pular em emergência:
+##   git commit --no-verify
+##
+
+npx --no-install ts-node --transpile-only scripts/qa-commit-msg.ts "$1"

@@ -1,0 +1,190 @@
+# PR Quality Checklist - Youse QA Mobile
+#
+# Roda em todo PR para `main` e faz três coisas:
+#   1. Análise estática (typecheck + lint + format + qa-checks em modo PR)
+#   2. Solicita review do GitHub Copilot
+#   3. Posta comentário com checklist auto-preenchido
+
+name: PR Quality Checklist
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  static-analysis:
+    name: Análise Estática
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      typecheck: ${{ steps.typecheck.outcome }}
+      lint:      ${{ steps.lint.outcome }}
+      format:    ${{ steps.format.outcome }}
+      qa_checks: ${{ steps.qa.outcome }}
+      qa_errors: ${{ steps.qa.outputs.errors }}
+      qa_warns:  ${{ steps.qa.outputs.warns }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: TypeScript (typecheck)
+        id: typecheck
+        run: npm run typecheck
+        continue-on-error: true
+
+      - name: ESLint
+        id: lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Prettier (format:check)
+        id: format
+        run: npm run format:check
+        continue-on-error: true
+
+      - name: QA Checks (modo PR — analisa diff vs main)
+        id: qa
+        run: |
+          PR_BASE=origin/main \
+          QA_REPORT_JSON=/tmp/qa-report.json \
+          npx ts-node --transpile-only scripts/qa-pre-commit-checks.ts || true
+
+          ERRORS=$(cat /tmp/qa-report.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['errors'])" 2>/dev/null || echo "0")
+          WARNS=$(cat /tmp/qa-report.json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['summary']['warns'])" 2>/dev/null || echo "0")
+
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+          echo "warns=$WARNS" >> $GITHUB_OUTPUT
+
+          [ "$ERRORS" -eq 0 ] || exit 1
+        continue-on-error: true
+
+  copilot-review:
+    name: Solicitar Copilot Review
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    if: github.event.action == 'opened'
+
+    steps:
+      - name: Solicitar review do GitHub Copilot
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              await github.request('POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers', {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+                reviewers: ['copilot'],
+              });
+              console.log('✅ Copilot review solicitado.');
+            } catch (e) {
+              console.log(`ℹ️ Copilot review: ${e.message}`);
+            }
+
+  post-checklist:
+    name: Comentário Checklist
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    if: always()
+
+    steps:
+      - name: Postar checklist no PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const icon = (outcome) => outcome === 'success' ? '✅' : outcome === 'failure' ? '❌' : '⬜';
+            const typecheck = '${{ needs.static-analysis.outputs.typecheck }}';
+            const lint      = '${{ needs.static-analysis.outputs.lint }}';
+            const format    = '${{ needs.static-analysis.outputs.format }}';
+            const qaErrors  = parseInt('${{ needs.static-analysis.outputs.qa_errors }}' || '0');
+            const qaWarns   = parseInt('${{ needs.static-analysis.outputs.qa_warns }}' || '0');
+
+            const qaIcon = qaErrors > 0 ? '❌' : qaWarns > 0 ? '⚠️' : '✅';
+            const qaSummary = qaErrors > 0
+              ? `${qaErrors} erro(s) + ${qaWarns} aviso(s)` 
+              : qaWarns > 0 ? `${qaWarns} aviso(s)` : 'OK';
+
+            const body = `## 🤖 QA Checklist Automático — Mobile (Youse)
+
+> Gerado por \`scripts/qa-pre-commit-checks.ts\` (WDIO + Appium)
+
+---
+
+### Validação Estática
+
+| Check | Status |
+|---|:---:|
+| TypeScript (typecheck) | ${icon(typecheck)} |
+| ESLint | ${icon(lint)} |
+| Prettier (format:check) | ${icon(format)} |
+| QA Checks Youse | ${qaIcon} ${qaSummary} |
+
+---
+
+### Checklist de Qualidade
+
+#### Código Mobile
+
+| Item | Status |
+|---|:---:|
+| Sem \`driver.pause()\` / \`browser.pause()\` (esperas fixas) | ⬜ _verificado pelo QA Check_ |
+| Sem \`it.only\` / \`describe.only\` | ⬜ _verificado pelo QA Check_ |
+| Seletores usam \`$('~accessibilityId')\` ou \`byDescContains()\` (não XPath) | ⬜ _verificado pelo QA Check_ |
+| Sem dados sensíveis (CPF, token, e-mail pessoal) | ⬜ _verificado pelo QA Check_ |
+| Sem \`debugger;\` | ⬜ _verificado pelo QA Check_ |
+| TODO/FIXME referenciam ticket Jira | ⬜ _verificado pelo QA Check_ |
+
+#### Testes
+
+| Item | Revisão |
+|---|:---:|
+| Testado em Android (emulador ou dispositivo real) | ⬜ _manual_ |
+| Screen objects atualizado se a UI mudou | ⬜ _manual_ |
+| Novo spec tem tag correta (\`@smoke\`, \`@e2e\`, \`@a11y\`) | ⬜ _verificado pelo QA Check_ |
+| A11y: content-desc presente nos novos elementos nativos | ⬜ _manual_ |
+
+---
+
+> Para detalhes dos QA Checks, veja os logs do job **Análise Estática** acima.
+`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes('QA Checklist Automático — Mobile'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

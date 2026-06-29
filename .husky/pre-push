@@ -1,0 +1,40 @@
+##
+## QA Pre-Push Hook — Youse Seguradora (Mobile)
+##
+## Validação completa antes de enviar commits para o repositório remoto:
+##   1. typecheck   → tsc --noEmit em todo o projeto
+##   2. lint        → ESLint em todos os arquivos
+##   3. format:check → Prettier verifica todos os arquivos
+##
+## Para pular em emergência:
+##   git push --no-verify
+##
+
+set -e
+
+# Pula se branch local não tem commits novos vs upstream
+if ! git rev-list --left-right --count @{u}...HEAD >/dev/null 2>&1; then
+  echo "ℹ️  Sem upstream — pulando pre-push checks."
+  exit 0
+fi
+
+AHEAD=$(git rev-list --count @{u}..HEAD)
+if [ "$AHEAD" -eq 0 ]; then
+  echo "ℹ️  Nenhum commit novo para enviar."
+  exit 0
+fi
+
+echo "🚀 Pre-push checks — $AHEAD commit(s) a enviar"
+echo ""
+
+echo "🔍 typecheck (completo)…"
+npm run --silent typecheck
+
+echo "🧹 lint (completo)…"
+npm run --silent lint
+
+echo "🎨 format:check (completo)…"
+npm run --silent format:check
+
+echo ""
+echo "✅ Tudo pronto para push, Youser!"

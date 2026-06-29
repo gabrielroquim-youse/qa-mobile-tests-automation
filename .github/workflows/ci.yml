@@ -60,6 +60,12 @@ jobs:
       - name: Verificar formatação (Prettier)
         run: npm run format:check
 
+      - name: QA Checks Youse (antipadrões mobile)
+        if: github.event_name == 'push'
+        run: npm run qa:precommit
+        env:
+          PR_BASE: HEAD~1
+
   test-android-a11y:
     name: A11y Smoke Android (gate de PR)
     needs: validate

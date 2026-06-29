@@ -1,0 +1,39 @@
+# CODEOWNERS — qa-mobile-tests-automation
+#
+# Define quem deve revisar obrigatoriamente cada parte do projeto.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# IMPORTANTE: O último padrão que corresponder a um arquivo tem precedência.
+
+# ── Revisão padrão para qualquer mudança ──────────────────────────────────────
+*                               @youse-seguradora/quality-engineers
+
+# ── Infraestrutura de CI e configuração global ────────────────────────────────
+.github/workflows/              @youse-seguradora/quality-engineers
+wdio.conf.ts                    @youse-seguradora/quality-engineers
+eslint.config.mjs               @youse-seguradora/quality-engineers
+.prettierrc                     @youse-seguradora/quality-engineers
+package.json                    @youse-seguradora/quality-engineers
+tsconfig.json                   @youse-seguradora/quality-engineers
+
+# ── Screen Objects (estrutura base dos testes) ────────────────────────────────
+tests/pages/                    @youse-seguradora/quality-engineers
+
+# ── Helpers compartilhados e seletores de acessibilidade ─────────────────────
+tests/helpers/                  @youse-seguradora/quality-engineers
+tests/data/                     @youse-seguradora/quality-engineers
+tests/enum/                     @youse-seguradora/quality-engineers
+
+# ── Fixtures e configuração de testes ─────────────────────────────────────────
+tests/fixtures/                 @youse-seguradora/quality-engineers
+config/                         @youse-seguradora/quality-engineers
+
+# ── Specs ─────────────────────────────────────────────────────────────────────
+tests/spec/                     @youse-seguradora/quality-engineers
+
+# ── Scripts de qualidade ──────────────────────────────────────────────────────
+scripts/                        @youse-seguradora/quality-engineers
+
+# ── Documentação ──────────────────────────────────────────────────────────────
+docs/                           @youse-seguradora/quality-engineers
+README.md                       @youse-seguradora/quality-engineers
