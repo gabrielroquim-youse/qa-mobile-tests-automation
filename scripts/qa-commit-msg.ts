@@ -10,7 +10,7 @@
  *
  *   2. Subject (título) em PT-BR, imperativo, ≤ 72 caracteres.
  *
- *   3. Corpo opcional — separado por linha em branco.
+ *   3. Corpo opcional  --  separado por linha em branco.
  *
  *   4. Evita misturar inglês/português no título (heurística simples para
  *      palavras inglesas comuns).
@@ -62,7 +62,7 @@ function checkEnglishLeak(subject: string): string[] {
 function main(): number {
   const file = process.argv[2];
   if (!file) {
-    console.error(c('red', '✗ Caminho da mensagem de commit não informado.'));
+    console.error(c('red', 'XX  Caminho da mensagem de commit não informado.'));
     return 1;
   }
 
@@ -105,9 +105,9 @@ function main(): number {
     errors.push('A segunda linha deve estar em branco, separando título e corpo.');
   }
 
-  // ── Saída ─────────────────────────────────────────────────────────────────
+  // - Saída -
   if (errors.length === 0 && warns.length === 0) {
-    console.log(c('green', '✓ Mensagem de commit dentro do padrão Youse.'));
+    console.log(c('green', 'OK  Mensagem de commit dentro do padrão Youse.'));
     return 0;
   }
 
@@ -115,7 +115,7 @@ function main(): number {
   console.log(c('bold', '📝 QA Commit-Msg Check'));
   console.log(c('gray', `   ${header}`));
   console.log('');
-  for (const e of errors) console.log(`  ${c('red', '✗')} ${e}`);
+  for (const e of errors) console.log(`  ${c('red', 'XX ')} ${e}`);
   for (const w of warns) console.log(`  ${c('yellow', '!')} ${w}`);
 
   if (errors.length > 0) {
@@ -134,6 +134,6 @@ function main(): number {
 try {
   process.exit(main());
 } catch (err) {
-  console.error(c('red', '✗ Erro inesperado na validação da mensagem:'), err);
+  console.error(c('red', 'XX  Erro inesperado na validação da mensagem:'), err);
   process.exit(0);
 }

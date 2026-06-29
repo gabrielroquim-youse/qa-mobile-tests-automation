@@ -1,10 +1,10 @@
 /**
- * QA Pre-Commit / PR Checks — Mobile (WebdriverIO + Appium)
+ * QA Pre-Commit / PR Checks  --  Mobile (WebdriverIO + Appium)
  * ---------------------------------------------------------------------------
  * Bateria de validações automáticas com dois modos de operação:
  *
- *   LOCAL (pre-commit)  → analisa arquivos STAGED (`git diff --cached`)
- *   CI    (PR check)    → analisa arquivos modificados no PR via env PR_BASE
+ *   LOCAL (pre-commit)  -> analisa arquivos STAGED (`git diff --cached`)
+ *   CI    (PR check)    -> analisa arquivos modificados no PR via env PR_BASE
  *                         PR_BASE=origin/main ts-node qa-pre-commit-checks.ts
  *
  * Cada check segue o contrato:
@@ -14,7 +14,7 @@
  *
  * Os checks são adaptados para o contexto mobile:
  *   - WDIO + Appium (driver.pause, $('~'), accessibility IDs)
- *   - Mocha (it.only / describe.only — sem test.only)
+ *   - Mocha (it.only / describe.only  --  sem test.only)
  *   - Sem Playwright browser (não há waitForTimeout, getByRole, etc.)
  * ---------------------------------------------------------------------------
  */
@@ -23,14 +23,14 @@ import { execSync } from 'child_process';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { extname, resolve } from 'path';
 
-// ── Modos de operação ────────────────────────────────────────────────────────
+// - Modos de operação -
 
 const REPO_ROOT = resolve(__dirname, '..');
 const PR_BASE = process.env['PR_BASE'];
 const REPORT_JSON = process.env['QA_REPORT_JSON'];
 const IS_CI = Boolean(PR_BASE);
 
-// ── Terminal colors ──────────────────────────────────────────────────────────
+// - Terminal colors -
 
 const COLORS = {
   reset: '\x1b[0m',
@@ -45,7 +45,7 @@ const COLORS = {
 const NO_COLOR = IS_CI || Boolean(process.env['NO_COLOR']);
 const c = (color: keyof typeof COLORS, text: string): string => (NO_COLOR ? text : `${COLORS[color]}${text}${COLORS.reset}`);
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
+// - Tipos -
 
 type CheckLevel = 'error' | 'warn';
 
@@ -68,7 +68,7 @@ interface Context {
   newFiles: string[];
 }
 
-// ── Listagem de arquivos ─────────────────────────────────────────────────────
+// - Listagem de arquivos -
 
 function getFiles(): { staged: string[]; added: string[] } {
   const cmd = IS_CI
@@ -90,7 +90,7 @@ function getFiles(): { staged: string[]; added: string[] } {
   return { staged, added };
 }
 
-// ── Leitura de conteúdo ──────────────────────────────────────────────────────
+// - Leitura de conteúdo -
 
 function readContent(file: string): string | null {
   try {
@@ -105,7 +105,7 @@ function readContent(file: string): string | null {
   }
 }
 
-// ── Helper: busca por regex em arquivos ─────────────────────────────────────
+// - Helper: busca por regex em arquivos -
 
 function findMatches(files: string[], pattern: RegExp, opts?: { onlyExt?: string[]; skipComments?: boolean }): string[] {
   const hits: string[] = [];
@@ -120,16 +120,16 @@ function findMatches(files: string[], pattern: RegExp, opts?: { onlyExt?: string
       if (opts?.skipComments && /^\s*(\/\/|\*|#)/.test(line)) continue;
       if (/eslint-disable(-next-line)?/.test(prev)) continue;
       const re = new RegExp(pattern.source, pattern.flags.replace('g', ''));
-      if (re.test(line)) hits.push(`${file}:${i + 1} → ${line.trim().slice(0, 120)}`);
+      if (re.test(line)) hits.push(`${file}:${i + 1} -> ${line.trim().slice(0, 120)}`);
     }
   }
   return hits;
 }
 
-// ── Checks ───────────────────────────────────────────────────────────────────
+// - Checks -
 
 const CHECKS: Check[] = [
-  // ── Segurança / LGPD ──────────────────────────────────────────────────────
+  // - Segurança / LGPD -
   {
     name: 'Bloqueia arquivos .env (exceto .env.example)',
     level: 'error',
@@ -145,7 +145,7 @@ const CHECKS: Check[] = [
     run: ({ stagedFiles }) =>
       stagedFiles
         .filter((f) => /^[^/]+\.(log|png|jpe?g|mp4|webm|zip|har|trace)$/i.test(f))
-        .map((f) => `Artefato local na raiz: ${f} — adicione ao .gitignore ou mova para docs/`),
+        .map((f) => `Artefato local na raiz: ${f}  --  adicione ao .gitignore ou mova para docs/`),
   },
   {
     name: 'Detecta secrets / tokens / API keys em texto claro',
@@ -170,7 +170,7 @@ const CHECKS: Check[] = [
     },
   },
   {
-    name: 'Detecta e-mails pessoais (gmail/hotmail/yahoo/outlook) — LGPD',
+    name: 'Detecta e-mails pessoais (gmail/hotmail/yahoo/outlook)  --  LGPD',
     level: 'warn',
     checklistItem: 'Nenhum dado sensível foi inserido',
     run: ({ stagedFiles }) =>
@@ -180,9 +180,9 @@ const CHECKS: Check[] = [
       ),
   },
 
-  // ── Antipadrões WDIO / Appium ─────────────────────────────────────────────
+  // - Antipadrões WDIO / Appium -
   {
-    name: 'Sem driver.pause() / browser.pause() — prefira waitForLoaded() ou waitForExist()',
+    name: 'Sem driver.pause() / browser.pause()  --  prefira waitForLoaded() ou waitForExist()',
     level: 'error',
     checklistItem: 'Não há esperas fixas (driver.pause)',
     run: ({ stagedFiles }) =>
@@ -203,7 +203,7 @@ const CHECKS: Check[] = [
       ),
   },
   {
-    name: 'Evita seletores XPath — prefira $("~accessibilityId") ou byDescContains()',
+    name: 'Evita seletores XPath  --  prefira $("~accessibilityId") ou byDescContains()',
     level: 'warn',
     checklistItem: 'Seletores usam accessibility IDs',
     run: ({ stagedFiles }) =>
@@ -224,7 +224,7 @@ const CHECKS: Check[] = [
       ),
   },
 
-  // ── Tags obrigatórias em novos specs ──────────────────────────────────────
+  // - Tags obrigatórias em novos specs -
   {
     name: 'Novos specs precisam de tag (@smoke|@e2e|@a11y|@mobile)',
     level: 'error',
@@ -238,9 +238,9 @@ const CHECKS: Check[] = [
     },
   },
 
-  // ── Spec no diretório correto ──────────────────────────────────────────────
+  // - Spec no diretório correto -
   {
-    name: 'Spec no diretório correto conforme tag (@smoke→smoke/ @e2e→e2e/ @a11y→a11y/)',
+    name: 'Spec no diretório correto conforme tag (@smoke->smoke/ @e2e->e2e/ @a11y->a11y/)',
     level: 'warn',
     checklistItem: 'Spec no diretório correto',
     run: ({ stagedFiles }) => {
@@ -258,7 +258,7 @@ const CHECKS: Check[] = [
     },
   },
 
-  // ── Debug code residual ───────────────────────────────────────────────────
+  // - Debug code residual -
   {
     name: 'Sem debugger; no código fonte',
     level: 'error',
@@ -269,7 +269,7 @@ const CHECKS: Check[] = [
       ),
   },
 
-  // ── Tamanho de arquivo ────────────────────────────────────────────────────
+  // - Tamanho de arquivo -
   {
     name: 'Arquivo > 500 KB (suspeito de binário/log)',
     level: 'warn',
@@ -287,7 +287,7 @@ const CHECKS: Check[] = [
     },
   },
 
-  // ── TODO/FIXME sem ticket Jira ────────────────────────────────────────────
+  // - TODO/FIXME sem ticket Jira -
   {
     name: 'TODO/FIXME deve referenciar ticket Jira (ex: TODO POSV-123)',
     level: 'warn',
@@ -299,21 +299,21 @@ const CHECKS: Check[] = [
   },
 ];
 
-// ── Runner ───────────────────────────────────────────────────────────────────
+// - Runner -
 
 function main(): number {
   const { staged, added } = getFiles();
   const mode = IS_CI ? `CI (diff vs ${PR_BASE})` : 'local (staged)';
 
   if (staged.length === 0) {
-    console.log(c('gray', `› Nenhum arquivo alterado [${mode}] — pulando checks Youse.`));
+    console.log(c('gray', `> Nenhum arquivo alterado [${mode}]  --  pulando checks Youse.`));
     return 0;
   }
 
   if (!IS_CI) {
     console.log('');
-    console.log(c('bold', '🔍 QA Pre-Commit Checks — Mobile (Youse)'));
-    console.log(c('gray', `   ${staged.length} arquivo(s) staged · ${added.length} novo(s)`));
+    console.log(c('bold', '[??] QA Pre-Commit Checks  --  Mobile (Youse)'));
+    console.log(c('gray', `   ${staged.length} arquivo(s) staged . ${added.length} novo(s)`));
     console.log('');
   }
 
@@ -325,16 +325,16 @@ function main(): number {
     results.push({ name: check.name, level: check.level, violations, checklistItem: check.checklistItem });
 
     if (!IS_CI) {
-      const icon = violations.length === 0 ? c('green', '✓') : check.level === 'error' ? c('red', '✗') : c('yellow', '!');
+      const icon = violations.length === 0 ? c('green', 'OK ') : check.level === 'error' ? c('red', 'XX ') : c('yellow', '!');
       const tag =
         violations.length === 0
           ? c('green', 'OK')
           : check.level === 'error'
             ? c('red', `FAIL (${violations.length})`)
             : c('yellow', `WARN (${violations.length})`);
-      console.log(`  ${icon} ${check.name}  ${c('dim', '·')} ${tag}`);
-      for (const v of violations.slice(0, 5)) console.log(c('gray', `      └─ ${v}`));
-      if (violations.length > 5) console.log(c('gray', `      └─ ... +${violations.length - 5} ocorrência(s)`));
+      console.log(`  ${icon} ${check.name}  ${c('dim', '.')} ${tag}`);
+      for (const v of violations.slice(0, 5)) console.log(c('gray', `        -  ${v}`));
+      if (violations.length > 5) console.log(c('gray', `        -  ... +${violations.length - 5} ocorrencia(s)`));
     }
   }
 
@@ -350,23 +350,23 @@ function main(): number {
 
   console.log('');
   if (errors.length === 0 && warns.length === 0) {
-    console.log(c('green', '✅ Todos os checks passaram.'));
+    console.log(c('green', '[OK] Todos os checks passaram.'));
     return 0;
   }
 
   if (warns.length > 0 && errors.length === 0) {
-    console.log(c('yellow', `⚠️  ${warns.length} aviso(s) — verifique antes de prosseguir.`));
+    console.log(c('yellow', `[!]  ${warns.length} aviso(s)  --  verifique antes de prosseguir.`));
     return 0;
   }
 
-  console.log(c('red', `✗ ${errors.length} erro(s) bloqueiam o commit. Corrija e tente novamente.`));
-  console.log(c('gray', '  Para pular em emergência: git commit --no-verify'));
+  console.log(c('red', `XX  ${errors.length} erro(s) bloqueiam o commit. Corrija e tente novamente.`));
+  console.log(c('gray', '  Para pular em emergencia: git commit --no-verify'));
   return 1;
 }
 
 try {
   process.exit(main());
 } catch (err) {
-  console.error(c('red', '✗ Erro inesperado nos checks:'), err);
+  console.error(c('red', 'XX  Erro inesperado nos checks:'), err);
   process.exit(0);
 }
